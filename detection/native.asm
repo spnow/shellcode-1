@@ -38,7 +38,7 @@
     bits 32
  
 ; windows only function
-; if gs is zero, we're 64-bit
+; if gs is zero, we're 32-bit
 ; returns TRUE for 32-bit else FALSE (we're 64-bit)
 is_32bit:
 _is_32bit:
