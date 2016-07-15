@@ -48,15 +48,16 @@ _get_verinfo:
     xor    eax, eax
     dec    eax
     jz     gv_x64
+    inc    eax
     mov    edi, [esp+12]  ; get ptr to os_ver structure
-    mov    eax, [fs:30h]  ; get peb
+    mov    eax, [fs:eax+30h]  ; get peb
     lea    esi, [eax+164] ; offset to OS version info
     jmp    gv_l1
 gv_x64:
     push   ecx
     pop    edi
     bits   64
-    mov    rax, [gs:60h]  ; peb on 64-bit systems
+    mov    rax, [gs:rax+60h]  ; peb on 64-bit systems
     lea    rsi, [rax+280] ; OS version info
     bits   32
 gv_l1:
