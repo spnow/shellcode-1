@@ -31,15 +31,19 @@
     bits 64
   
     %ifndef BIN
-      global _search_impx
-      global _search_expx
+      global getapix
     %endif
     
 ; in: eax = s
 ; out: crc-32c(s)
 ;
-crc32c:    
-    xchg   eax, esi          ; esi = s
+crc32c:
+    push   rsi
+    push   rcx 
+    push   rdx 
+    
+    push   rax
+    pop    rsi    
     xor    eax, eax          ; eax = 0
     cdq                      ; edx = 0
 crc_l0:
@@ -54,14 +58,24 @@ crc_l1:
     xor    edx, 0x82F63B78
 crc_l2:
     loop   crc_l1
-    sub    al, 0x20          ; until al==0
-    jnz    crc_l0    
+    cmp    al, 0x20          ; until al==0
+    jnz    crc_l0
+    xchg   eax, edx
+    
+    pop    rdx
+    pop    rcx
+    pop    rsi    
     ret
-    
-search_imp:
-    
+   
+; in: rbx = base of module to search
+;     r8d = hash to find
+;
+; out: rax = api address resolved in IAT
+;   
+search_impx:
+    push   rdi
     mov    eax, [rbx+3ch]  ; eax = IMAGE_DOS_HEADER.e_lfanew
-    add    eax, 18h              ; get import directory
+    add    eax, 18h        ; get import directory
     
     ; if (IMAGE_DATA_DIRECTORY.VirtualAddress == 0) goto imp_l2;
     mov    eax, [rbx+rax+78h]
@@ -72,47 +86,53 @@ search_imp:
 imp_l0:
     push   rbp
     pop    rsi
-    lodsd                        ; OriginalFirstThunk +00h
-    xchg   eax, edx              ; temporarily store in edx
-    lodsd                        ; TimeDateStamp      +04h
-    lodsd                        ; ForwarderChain     +08h
-    lodsd                        ; Name_              +0Ch
+    lodsd            ; OriginalFirstThunk +00h
+    xchg   eax, edx  ; temporarily store in edx
+    lodsd            ; TimeDateStamp      +04h
+    lodsd            ; ForwarderChain     +08h
+    lodsd            ; Name               +0Ch
     test   eax, eax
-    jz     imp_l2              ; if (Name_ == 0) goto imp_l2;
+    jz     imp_l2    ; if (Name == 0) goto imp_l2;
     
-    add    eax, ebx
+    add    rax, rbx
     call   crc32c
+    mov    r9d, eax
     
-    lodsd                        ; FirstThunk         +10h
+    lodsd            ; FirstThunk         +10h
     push   rsi
     pop    rbp
     
-    lea    rsi, [rdx+rbx]        ; OriginalFirstThunk + image base
-    lea    rdi, [rax+rbx]        ; FirstThunk + image base
+    lea    rsi, [rdx+rbx] ; OriginalFirstThunk + base
+    lea    rdi, [rax+rbx] ; FirstThunk + base
 imp_l1:
-    lodsq                        ; oft->u1.Function
+    lodsq               ; oft->u1.Function
     scasq
-    test   eax, eax              ; if (oft->u1.Function == 0)
-    jz     imp_l0              ; goto imp_l0
+    test   eax, eax     ; if (oft->u1.Function == 0)
+    jz     imp_l0       ; goto imp_l0
     
     cqo
-    inc    edx                   ; will be zero if rax >= 0x8000000000000000
-    jz     imp_l1              ; oft->u1.Ordinal & IMAGE_ORDINAL_FLAG
+    inc    edx     ; will be zero if rax >= 0x8000000000000000
+    jz     imp_l1       ; oft->u1.Ordinal & IMAGE_ORDINAL_FLAG
     
-    lea    rax, [rax+rbx+2]      ; ibn->Name_
-    call   crc32c                ; get hash of API string    
-    add    eax, ebx
+    lea    rax, [rax+rbx+2] ; ibn->Name
+    call   crc32c       ; get hash of API string    
+    add    eax, r9d
     
-    cmp    eax, r8d              ; found match?
+    cmp    eax, r8d     ; found match?
     jne    imp_l1
     
-    mov    rax, [rdi-8]          ; ft->u1.Function    
+    mov    rax, [rdi-8] ; ft->u1.Function    
 imp_l2:
+    pop    rdi
     ret
 
-
-search_exp:
-
+; in:  rbx = base of module to search
+;      r8d = hash to find
+;
+; out: rax = api address resolved in EAT
+;
+search_expx:
+    push   rdi
     ; [IMAGE_DOS_HEADER.e_lfanew]
     mov    eax, [rbx+3ch]    ; [IMAGE_DOS_HEADER.e_lfanew]
     add    eax, 10h
@@ -122,9 +142,10 @@ search_exp:
     jecxz  exp_l2
     
     ; get crc32 hash of dll name
-    mov    rax, [rbx+rcx+0ch]
+    mov    eax, [rbx+rcx+0ch]
     add    rax, rbx
     call   crc32c
+    mov    r9d, eax
     
     ; [IMAGE_EXPORT_DIRECTORY.NumberOfNames        ] = 18h
     ; [IMAGE_EXPORT_DIRECTORY.AddressOfNameOrdinals] = 24h
@@ -137,14 +158,10 @@ exp_l0:
     push   rax
     loop   exp_l0
     
-    ; AddressOfNameOrdinals
-    pop    rdi
-    ; AddressOfNames 
-    pop    rdx
-    ; AddressOfFunctions
-    pop    rsi
-    ; NumberOfNames    
-    pop    rcx
+    pop    rdi          ; rdi = AddressOfNameOrdinals     
+    pop    rdx          ; rdx = AddressOfNames    
+    pop    rsi          ; rsi = AddressOfFunctions        
+    pop    rcx          ; rcx = NumberOfNames
     
     sub    rcx, rbx
     jz     exp_l2
@@ -152,6 +169,7 @@ exp_l1:
     mov    eax, [rdx+4*rcx-4]
     add    rax, rbx
     call   crc32c
+    add    eax, r9d
     
     cmp    eax, r8d
     loopne exp_l1
@@ -165,36 +183,37 @@ exp_l1:
     add    rcx, rax
 exp_l2:
     mov    rax, rcx
+    pop    rdi
     ret
 
-
+; LPVOID getapix(DWORD hash);
 getapix:
-_getapix:
     push   rbx
     push   rdi
-    mov    r8d, eax
+    push   rsi
+
+    mov    r8d, ecx
     
     push   60h
-    pop    rbx
+    pop    rax
     
-    mov    rax, [gs:rbx]     ; rax = (PPEB) __readgsqword(0x60);
-    mov    rax, [rax+18h]    ; rax = PEB.Ldr
-    mov    rdi, [rax+30h]    ; rdi = ldr->InLoadOrderModuleList.Flink   
+    mov    rax, [gs:rax]  ; rax = (PPEB) __readgsqword(0x60);
+    mov    rax, [rax+18h] ; rax = PEB.Ldr
+    mov    rdi, [rax+10h] ; rdi = ldr->InLoadOrderModuleList.Flink   
     jmp    gapi_l1
 gapi_l0:
-
-    call   search_imp        ; Import Address Table
-    
+    call   search_expx    
     test   rax, rax
     jnz    gapi_l2
     
-    mov    rdi, [rdi]        ; dte->InMemoryOrderLinks.Flink
+    mov    rdi, [rdi] ; dte->InMemoryOrderLinks.Flink
 gapi_l1:
-    mov    rbx, [rdi+10h]    ; dte->DllBase
+    mov    rbx, [rdi+30h] ; dte->DllBase
     test   rbx, rbx
     jnz    gapi_l0
     xchg   eax, ebx
 gapi_l2:
+    pop    rsi
     pop    rdi
     pop    rbx
     ret

@@ -250,7 +250,7 @@ int main(int argc, char *argv[])
     return 0;
   }
   h = crc32c(argv[1]) + crc32c(argv[2]);
-  printf("\nAddress of %s = %p", argv[2], getapi(h));
+  printf("\nAddress of %s = %p", argv[2], getapix(h));
 }
 #endif
 
