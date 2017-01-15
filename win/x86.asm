@@ -31,8 +31,7 @@
     bits 32
     
     %ifndef BIN
-      global _search_impx
-      global _search_expx
+      global _getapix
     %endif
     
 struc pushad_t
@@ -77,7 +76,6 @@ crc_l2:
 ; out: eax = api address resolved in IAT
 ;    
 search_impx:    
-_search_impx:  
     xor    eax, eax    ; api_adr = NULL
     pushad
     ; eax = IMAGE_DOS_HEADER.e_lfanew
@@ -136,7 +134,6 @@ imp_l2:
 ; out: eax = api address resolved in EAT
 ;      
 search_expx:
-_search_expx:
     pushad
     ; eax = IMAGE_DOS_HEADER.e_lfanew
     mov    eax, [ebx+3ch]            
@@ -189,27 +186,26 @@ exp_l2:
     popad
     ret    
     
-   
 getapix:
 _getapix:
-    xor    eax, eax
     pushad
+    mov    ebp, [esp+32+4]
     push   30h
     pop    ecx
 
-    mov    eax, [fs:ecx]     ; eax = (PPEB) __readfsdword(0x30);
-    mov    eax, [eax+12]     ; eax = (PMY_PEB_LDR_DATA)peb->Ldr
-    mov    edi, [eax+12]     ; edi = ldr->InLoadOrderModuleList.Flink
+    mov    eax, [fs:ecx] ; eax = (PPEB) __readfsdword(0x30);
+    mov    eax, [eax+12] ; eax = (PMY_PEB_LDR_DATA)peb->Ldr
+    mov    edi, [eax+12] ; edi = ldr->InLoadOrderModuleList.Flink
     jmp    gapi_l1
 gapi_l0:
-    mov    eax, [esp+_eax]
+    mov    eax, ebp      ; eax = hash     
     call   search_expx
     test   eax, eax
     jnz    gapi_l2
 
-    mov    edi, [edi]        ; edi = dte->InMemoryOrderLinks.Flink
+    mov    edi, [edi]    ; edi = dte->InMemoryOrderLinks.Flink
 gapi_l1:
-    mov    ebx, [edi+24]     ; ebx = dte->DllBase
+    mov    ebx, [edi+24] ; ebx = dte->DllBase
     test   ebx, ebx
     jnz    gapi_l0
 gapi_l2:

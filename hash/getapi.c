@@ -131,7 +131,7 @@ LPVOID search_expx(LPVOID base, DWORD hash);
  
 LPVOID search_imp(LPVOID base, DWORD hash)
 {
-  DWORD                    api_h, dll_h, i, rva;
+  DWORD                    dll_h, i, rva;
   PIMAGE_IMPORT_DESCRIPTOR imp;
   PIMAGE_THUNK_DATA        oft, ft;
   PIMAGE_IMPORT_BY_NAME    ibn;
